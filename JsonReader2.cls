@@ -16,24 +16,24 @@ Attribute VB_Exposed = False
     
  
 '/--値を取得する。
-Public Function Read(ByVal Key) As Variant
-    If JsonDic.Exists(Key) Then
-        Read = JsonDic.Item(Key)
+Public Function Read(ByVal key) As Variant
+    If JsonDic.Exists(key) Then
+        Read = JsonDic.Item(key)
     Else
         Read = Null
     End If
 End Function
 
 '/--Keyに紐づくArrayの値を取得する。
-Public Function Read_Array(ByVal Key) As Variant()
-    If JsonDic.Exists(Key & "[0]") Then
+Public Function Read_Array(ByVal key) As Variant()
+    If JsonDic.Exists(key & "[0]") Then
         Dim ResultCol As Collection
             Set ResultCol = New Collection
         Dim ReadIndex As Long
             ReadIndex = 0
         
-        Do While JsonDic.Exists(Key & "[" & ReadIndex & "]")
-            ResultCol.Add JsonDic.Item(Key & "[" & ReadIndex & "]")
+        Do While JsonDic.Exists(key & "[" & ReadIndex & "]")
+            ResultCol.Add JsonDic.Item(key & "[" & ReadIndex & "]")
             ReadIndex = ReadIndex + 1
         Loop
         
@@ -61,6 +61,15 @@ Public Function Read_PropsArray(ByVal BaseKey, ByVal MainKey) As Variant
         Read_PropsArray = Null
     End If
 End Function
+
+'/--同階層にある特定のプロパティ値をArrayとしてKeyの数だけ取得する。
+'/--取得したい配列部分は[]で記載する。
+'/--{A:1,B:[1,2,3,4,5]、C:{CA:[11,22,33,44,55]}} でBの配列を取得したい場合は…B[]とKey入力する。
+'/--CAの配列を取得したい場合はC-CA[]
+Public Function Read_MultiPropsArray(ParamArray Base_MainKeys()) As Variant
+
+End Function
+
 
 '/--Collectionを配列に変換する。
 Private Function ConvertCollection(ByRef Col As Collection) As Variant()
@@ -242,7 +251,7 @@ Private Function Parse_Array(ByRef Text As String, ByVal Index As Long, ByVal En
         ElseIf CheckTarget = "," Then
             GoTo Continue
         Else
-            ReadIndex = Parse_Core(Text, ReadIndex, ArrayDic)
+            ReadIndex = Parse_Core(Text, ReadIndex - 1, ArrayDic)
         End If
         
         If JsonEndIndex <= ReadIndex Then
@@ -260,6 +269,11 @@ End Function
 
 '/--プロパティ値のデータを処理する。
 Private Function Parse_Core(ByRef Text As String, ByVal Index As Long, ByVal DicText As String) As Long
+    If JsonEndIndex <= Index Then
+        Parse_Core = JsonEndIndex
+        Exit Function
+    End If
+    
     Dim CheckTarget As String
         CheckTarget = Mid(Text, Index, 1)
     
@@ -283,31 +297,46 @@ Private Function Parse_Core(ByRef Text As String, ByVal Index As Long, ByVal Dic
                  
             If SymbolIndex < 1 Or SymbolIndex - Index < 1 Then Err.Raise 1000, "終端記号が正しくありません。"
             
-            Dim Value As String
-                Value = Replace(Replace(Mid(Text, Index, SymbolIndex - ReadIndex), "\""", "'"), """", "")
+            Dim value As String
+                value = Replace(Replace(Mid(Text, Index, SymbolIndex - ReadIndex), "\""", "'"), """", "")
             
-            If IsNumeric(CheckTarget) Then
-                JsonDic.Add DicText, CLng(Value)
-            Else
-                
-                Dim CheckUtcValues As Variant
-                    CheckUtcValues = Split(Value, "T")
-                
-                If UBound(CheckUtcValues) = 0 Or Len(Value) <> 10 Then
-                    JsonDic.Add DicText, Value
-                Else
-                
-                    Dim UtcDateValues As Variant
-                        UtcDateValues = Split(CStr(CheckUtcValues(0)), "-")
-                    
-                    Dim UtcDate As Date
-                        UtcDate = DateSerial(CInt(UtcDateValues(0)), CInt(UtcDateValues(1)), CInt(UtcDateValues(2)))
-                    
-                    UtcDate = DateAdd("h", CDbl(Mid(CStr(UtcDateValues(1)), 1, 2)), UtcDate)
-                    UtcDate = DateAdd("n", CDbl(Mid(CStr(UtcDateValues(1)), 4, 2)), UtcDate)
-                    UtcDate = DateAdd("s", CDbl(Mid(CStr(UtcDateValues(1)), 7, 2)), UtcDate)
-                End If
+            If IsNumeric(value) = False Then GoTo NotNumber
+            If Len(value) < 10 Then
+                JsonDic.Add DicText, CLng(value)
+            
+            ElseIf Len(value) = 10 Then
+                If CLng(Mid(value, 1, 9)) > 214748364 Then GoTo NotNumber
+                 JsonDic.Add DicText, CLng(value)
+                 
             End If
+            
+            GoTo ContinueCore
+            
+NotNumber:
+            Dim CheckUtcValues As Variant
+                CheckUtcValues = Split(value, "T")
+            
+            If UBound(CheckUtcValues) < 1 Then GoTo NotDate
+            If Len(CheckUtcValues(0)) <> 10 Then GoTo NotDate
+            If Mid(CheckUtcValues(0), 5, 1) = "-" And Mid(CheckUtcValues(0), 8, 1) = "-" Then
+                Dim UtcDateValues As Variant
+                    UtcDateValues = Split(CStr(CheckUtcValues(0)), "-")
+                
+                Dim UtcDate As Date
+                    UtcDate = DateSerial(CInt(UtcDateValues(0)), CInt(UtcDateValues(1)), CInt(UtcDateValues(2)))
+                
+                UtcDate = DateAdd("h", CDbl(Mid(CStr(CheckUtcValues(1)), 1, 2)), UtcDate)
+                UtcDate = DateAdd("n", CDbl(Mid(CStr(CheckUtcValues(1)), 4, 2)), UtcDate)
+                UtcDate = DateAdd("s", CDbl(Mid(CStr(CheckUtcValues(1)), 7, 2)), UtcDate)
+                
+                JsonDic.Add DicText, UtcDate
+                GoTo ContinueCore
+            End If
+
+NotDate:
+    JsonDic.Add DicText, value
+ContinueCore:
+            
             ReadIndex = SymbolIndex + 1
     End Select
     
@@ -327,17 +356,17 @@ Private Function GetEndSymbolIndex(ByRef Text As String, ByVal Index As Long, By
         Err.Raise 1000, "記号が正しくありません。"
     End If
     
-    Dim T1 As Long, T2 As Long
-        T1 = Index
-        T2 = Index
+    Dim t1 As Long, t2 As Long
+        t1 = Index
+        t2 = Index
     Do
-        T1 = InStr(T1 + 1, Text, Target)
-        T2 = InStr(T2 + 1, Text, EndTarget)
-    Loop While T1 <> 0 And T2 <> 0 And T1 < T2
+        t1 = InStr(t1 + 1, Text, Target)
+        t2 = InStr(t2 + 1, Text, EndTarget)
+    Loop While t1 <> 0 And t2 <> 0 And t1 < t2
     
-    If T2 = 0 Then Err.Raise 1000, "終端記号が見つかりません。"
+    If t2 = 0 Then Err.Raise 1000, "終端記号が見つかりません。"
     
-    GetEndSymbolIndex = T2
+    GetEndSymbolIndex = t2
 End Function
 
 '/--終端記号(,}])の内最小のIndexを返却する。
@@ -376,3 +405,7 @@ Private Function SkipSpace(ByRef Text As String, ByVal Index As Long) As Long
     SkipSpace = Index
 End Function
 
+'/--開始～終了までの範囲の文字列を取得する。
+Private Function Scope(ByRef Text As String, ByVal StartIndex As Long, ByVal EndIndex As Long) As String
+    Scope = Mid$(Text, StartIndex, EndIndex - 1)
+End Function
