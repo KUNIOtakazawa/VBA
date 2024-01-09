@@ -12,10 +12,10 @@ Attribute VB_Exposed = False
 '//--
     Private JsonDic As Object
     Private JsonEndIndex As Long
+    Private Const MaxValue As Long = 2147483647
     
-
-    
-'/--’l‚ğæ“¾‚·‚éB
+ 
+'/--å€¤ã‚’å–å¾—ã™ã‚‹ã€‚
 Public Function Read(ByVal Key) As Variant
     If JsonDic.Exists(Key) Then
         Read = JsonDic.Item(Key)
@@ -24,7 +24,7 @@ Public Function Read(ByVal Key) As Variant
     End If
 End Function
 
-'/--Key‚É•R‚Ã‚­Array‚Ì’l‚ğæ“¾‚·‚éB
+'/--Keyã«ç´ã¥ãArrayã®å€¤ã‚’å–å¾—ã™ã‚‹ã€‚
 Public Function Read_Array(ByVal Key) As Variant()
     If JsonDic.Exists(Key & "[0]") Then
         Dim ResultCol As Collection
@@ -43,8 +43,8 @@ Public Function Read_Array(ByVal Key) As Variant()
     End If
 End Function
 
-'/--“¯ŠK‘w‚É‚ ‚é“Á’è‚ÌƒvƒƒpƒeƒB’l‚ğArray‚Æ‚µ‚Äæ“¾‚·‚éB
-Public Function Read_PropsArray(ByVal BaseKey, ByVal MainKey) As Variant()
+'/--åŒéšå±¤ã«ã‚ã‚‹ç‰¹å®šã®ãƒ—ãƒ­ãƒ‘ãƒ†ã‚£å€¤ã‚’Arrayã¨ã—ã¦å–å¾—ã™ã‚‹ã€‚
+Public Function Read_PropsArray(ByVal BaseKey, ByVal MainKey) As Variant
     If JsonDic.Exists(BaseKey & "[0]->" & MainKey) Then
         Dim ResultCol As Collection
             Set ResultCol = New Collection
@@ -62,7 +62,7 @@ Public Function Read_PropsArray(ByVal BaseKey, ByVal MainKey) As Variant()
     End If
 End Function
 
-'/--Collection‚ğ”z—ñ‚É•ÏŠ·‚·‚éB
+'/--Collectionã‚’é…åˆ—ã«å¤‰æ›ã™ã‚‹ã€‚
 Private Function ConvertCollection(ByRef Col As Collection) As Variant()
     If Col.Count = 0 Then: Exit Function
     
@@ -79,16 +79,89 @@ Private Function ConvertCollection(ByRef Col As Collection) As Variant()
     ConvertCollection = Result
 End Function
 
-'/--ObjectŒ`®‚Ìƒf[ƒ^‚ğˆ—‚·‚éB
+'/--ä¿å­˜ã—ãŸã‚­ãƒ¼ã‚’èª­ã¿è¾¼ã‚€
+Public Sub Debug_Dic()
+On Error Resume Next
+    
+    Debug.Print "--------------------------------"
+    
+    Dim r As Variant, Result As Variant
+
+    Result = JsonDic.Keys()
+    For Each r In Result
+        Debug.Print r & " : " & JsonDic.Item(CStr(r))
+    Next
+    
+    Debug.Print "-----------------------------END"
+    Exit Sub
+
+    For Each r In Result
+        Debug.Print r
+    Next
+    
+    Debug.Print "-----------------------------END"
+End Sub
+
+'---ãƒ•ã‚¡ã‚¤ãƒ«å†…ã®ãƒ†ã‚­ã‚¹ãƒˆã‚’èª­è¾¼ã¿ã€JSONã‚’è§£æã™ã‚‹ã€‚
+Public Sub ParseJsonFile(ByVal FilePath As String)
+    Dim File As Object, Stream As Object
+        Set File = CreateObject("Scripting.FileSystemObject")
+        Set Stream = File.OpenTextFile(FilePath, 1, False)
+    
+    Dim ParseJsonText As String: ParseJsonText = Stream.ReadAll
+    
+    Stream.Close
+    Set Stream = Nothing
+    Set File = Nothing
+    
+    Call Parse(ParseJsonText)
+End Sub
+
+'/--æŒ‡å®šã®JSONæ–‡å­—åˆ—ã‚’è§£æã—ã¾ã™ã€‚
+Public Sub Parse(ByRef ParseJsonText As String)
+    Set JsonDic = CreateObject("Scripting.Dictionary")
+    
+    
+    Dim Index As Long
+        Index = 1
+        JsonEndIndex = Len(ParseJsonText) - 1
+    
+    Index = SkipSpace(ParseJsonText, Index)
+    
+    '5ç§’ä»¥ä¸Šã®å‹•ä½œã¯å¼·åˆ¶åœæ­¢
+    TimeupLimit = DateAdd("s", 5000, Now)
+        
+    Dim CheckTarget As String
+        CheckTarget = Mid(ParseJsonText, Index, 1)
+        Index = Index + 1
+        
+    If CheckTarget = "{" Then
+        StartIndex = Parse_Object(ParseJsonText, Index, JsonEndIndex, "")
+    
+    ElseIf CheckTarget = "[" Then
+        StartIndex = Parse_Array(ParseJsonText, Index, JsonEndIndex, "")
+    
+    Else: Err.Raise 1000, "å…ˆç«¯è¨˜å·ãŒæ­£ã—ãã‚ã‚Šã¾ã›ã‚“ã€‚"
+    
+    End If
+
+    If JsonEndIndex > StartIndex Then
+        Err.Raise 1000, , "ä½•ã‹å‡¦ç†æ¼ã‚ŒãŒã‚ã‚Šãã†ã§ã™ã‚ˆâ€¦?"
+    End If
+End Sub
+
+
+'/--Objectå½¢å¼ã®ãƒ‡ãƒ¼ã‚¿ã‚’å‡¦ç†ã™ã‚‹ã€‚
 Private Function Parse_Object(ByRef Text As String, ByVal Index As Long, ByVal EndIndex As Long, ByVal DicText As String) As Long
     Dim ReadIndex As Long
         ReadIndex = Index
     
     Dim CheckTarget As String
-        CheckTarget = Mid(Text, ReadIndex, 1)
-    
+        
     Do While ReadIndex <= EndIndex
-        ReadIndex = SkipSpace(Text, Index)
+        ReadIndex = SkipSpace(Text, ReadIndex)
+        CheckTarget = Mid(Text, ReadIndex, 1)
+        ReadIndex = ReadIndex + 1
         
         If CheckTarget = "{" Then
             ReadIndex = Parse_Object(Text, ReadIndex, GetEndSymbolIndex(Text, ReadIndex + 1, CheckTarget), DicText)
@@ -96,24 +169,30 @@ Private Function Parse_Object(ByRef Text As String, ByVal Index As Long, ByVal E
         ElseIf CheckTarget = "[" Then
             ReadIndex = Parse_Array(Text, ReadIndex, GetEndSymbolIndex(Text, ReadIndex + 1, CheckTarget), DicText)
         
+        ElseIf CheckTarget = "}" Then
+            Parse_Object = EndIndex + 1
+            Exit Function
+        
+        ElseIf CheckTarget = "," Then
+            
         Else
-            If CheckTarget <> """" Then Err.Raise 1000, "ƒvƒƒpƒeƒB‚ª‘¶İ‚µ‚Ü‚¹‚ñB"
+            If CheckTarget <> """" Then Err.Raise 1000, "ãƒ—ãƒ­ãƒ‘ãƒ†ã‚£ãŒå­˜åœ¨ã—ã¾ã›ã‚“ã€‚"
             ReadIndex = SkipSpace(Text, ReadIndex)
             
             Dim SymbolIndex As Long
                 SymbolIndex = InStr(ReadIndex + 1, Text, """", vbTextCompare)
                 
-            '--ƒGƒXƒP[ƒv”»’è
+            '--ã‚¨ã‚¹ã‚±ãƒ¼ãƒ—åˆ¤å®š
             Do While InStr(SymbolIndex, Text, "\", vbTextCompare) = 1
                 SymbolIndex = InStr(SymbolIndex + 1, Text, """", vbTextCompare)
-                If SymbolIndex = 0 Then Err.Raise "ƒvƒƒpƒeƒBI’[‚Ì‹L†‚ª³‚µ‚­‚ ‚è‚Ü‚¹‚ñB"
+                If SymbolIndex = 0 Then Err.Raise 1000, "ãƒ—ãƒ­ãƒ‘ãƒ†ã‚£çµ‚ç«¯ã®è¨˜å·ãŒæ­£ã—ãã‚ã‚Šã¾ã›ã‚“ã€‚"
             Loop
             
             Dim AppendDicText As String
-                AppendDicText = Mid(Text, ReadIndex + 1, SymbolIndex - ReadIndex - 1)
+                AppendDicText = Mid(Text, ReadIndex, SymbolIndex - ReadIndex)
             
             SymbolIndex = InStr(SymbolIndex, Text, ":", vbTextCompare)
-            If SymbolIndex = 0 Then Err.Raise "ƒvƒƒpƒeƒBI’[‚Ì‹L†‚ª³‚µ‚­‚ ‚è‚Ü‚¹‚ñB"
+            If SymbolIndex = 0 Then Err.Raise 1000, "ãƒ—ãƒ­ãƒ‘ãƒ†ã‚£çµ‚ç«¯ã®è¨˜å·ãŒæ­£ã—ãã‚ã‚Šã¾ã›ã‚“ã€‚"
             
             If DicText = "" Then
                 ReadIndex = Parse_Core(Text, SkipSpace(Text, SymbolIndex + 1), AppendDicText)
@@ -122,56 +201,122 @@ Private Function Parse_Object(ByRef Text As String, ByVal Index As Long, ByVal E
             End If
         End If
         
-        If JsonEndIndex >= ReadIndex Then
+        If JsonEndIndex <= ReadIndex Then
             Parse_Object = ReadIndex
             Exit Function
         End If
     Loop
+    
+    Parse_Object = ReadIndex
 
 End Function
 
 
-'/--ArrayŒ`®‚Ìƒf[ƒ^‚ğˆ—‚·‚éB
+'/--Arrayå½¢å¼ã®ãƒ‡ãƒ¼ã‚¿ã‚’å‡¦ç†ã™ã‚‹ã€‚
 Private Function Parse_Array(ByRef Text As String, ByVal Index As Long, ByVal EndIndex As Long, DicText As String) As Long
-
+    Dim ReadIndex As Long
+        ReadIndex = Index
+    
+    Dim CheckTarget As String
+        
+    Dim ArrayIndex As Long
+        ArrayIndex = 0
+    Dim ArrayDic As String
+    
+    Do While ReadIndex <= EndIndex
+        ArrayDic = DicText & "[" & ArrayIndex & "]"
+        ReadIndex = SkipSpace(Text, ReadIndex)
+        CheckTarget = Mid(Text, ReadIndex, 1)
+        ReadIndex = ReadIndex + 1
+        
+        If CheckTarget = "{" Then
+            ReadIndex = Parse_Object(Text, ReadIndex, GetEndSymbolIndex(Text, ReadIndex, CheckTarget), ArrayDic)
+        
+        ElseIf CheckTarget = "[" Then
+            ReadIndex = Parse_Array(Text, ReadIndex, GetEndSymbolIndex(Text, ReadIndex, CheckTarget), ArrayDic)
+        
+        ElseIf CheckTarget = "]" Then
+            Parse_Array = EndIndex + 1
+            Exit Function
+            
+        ElseIf CheckTarget = "," Then
+            GoTo Continue
+        Else
+            ReadIndex = Parse_Core(Text, ReadIndex, ArrayDic)
+        End If
+        
+        If JsonEndIndex <= ReadIndex Then
+            Parse_Array = ReadIndex
+            Exit Function
+        End If
+        
+        ArrayIndex = ArrayIndex + 1
+Continue:
+    Loop
+    
+    Parse_Array = ReadIndex
+    
 End Function
 
-'/--ƒvƒƒpƒeƒB’l‚Ìƒf[ƒ^‚ğˆ—‚·‚éB
+'/--ãƒ—ãƒ­ãƒ‘ãƒ†ã‚£å€¤ã®ãƒ‡ãƒ¼ã‚¿ã‚’å‡¦ç†ã™ã‚‹ã€‚
 Private Function Parse_Core(ByRef Text As String, ByVal Index As Long, ByVal DicText As String) As Long
     Dim CheckTarget As String
         CheckTarget = Mid(Text, Index, 1)
     
     Dim ReadIndex As Long
         ReadIndex = Index
-        
+                
     Select Case CheckTarget
-        Case ",": ReadIndex = Index + 1
-        Case "{": ReadIndex = Parse_Object(Text, Index, GetEndSymbolIndex(Text, Index, CheckTarget), DicText)
-        Case "[": ReadIndex = Parse_Array(Text, Index, GetEndSymbolIndex(Text, Index, CheckTarget), DicText)
+        Case ",": ReadIndex = ReadIndex + 1
+        Case "{": ReadIndex = Parse_Object(Text, Index + 1, GetEndSymbolIndex(Text, Index, CheckTarget), DicText)
+        Case "[": ReadIndex = Parse_Array(Text, Index + 1, GetEndSymbolIndex(Text, Index, CheckTarget), DicText)
         Case "t": JsonDic.Add DicText, True
+            ReadIndex = ReadIndex + 4
         Case "f": JsonDic.Add DicText, False
+            ReadIndex = ReadIndex + 5
         Case "n": JsonDic.Add DicText, Null
+            ReadIndex = ReadIndex + 4
         
         Case Else
             Dim SymbolIndex As Long
-                 SymbolIndex = InStr(ReadIndex, Text, ",", vbTextCompare)
-                 ReadIndex = SymbolIndex
+                 SymbolIndex = GetMinEndSymbolIndex(Text, ReadIndex)
                  
-            If SymbolIndex < 1 Then Err.Raise 1000, "I’[‹L†‚ª³‚µ‚­‚ ‚è‚Ü‚¹‚ñB"
+            If SymbolIndex < 1 Or SymbolIndex - Index < 1 Then Err.Raise 1000, "çµ‚ç«¯è¨˜å·ãŒæ­£ã—ãã‚ã‚Šã¾ã›ã‚“ã€‚"
+            
+            Dim Value As String
+                Value = Replace(Replace(Mid(Text, Index, SymbolIndex - ReadIndex), "\""", "'"), """", "")
             
             If IsNumeric(CheckTarget) Then
-                JsonDic.Add DicText, CLng(Mid(Text, ReadIndex, SymbolIndex - ReadIndex))
+                JsonDic.Add DicText, CLng(Value)
             Else
-            
-            End If
-            
                 
+                Dim CheckUtcValues As Variant
+                    CheckUtcValues = Split(Value, "T")
+                
+                If UBound(CheckUtcValues) = 0 Or Len(Value) <> 10 Then
+                    JsonDic.Add DicText, Value
+                Else
+                
+                    Dim UtcDateValues As Variant
+                        UtcDateValues = Split(CStr(CheckUtcValues(0)), "-")
+                    
+                    Dim UtcDate As Date
+                        UtcDate = DateSerial(CInt(UtcDateValues(0)), CInt(UtcDateValues(1)), CInt(UtcDateValues(2)))
+                    
+                    UtcDate = DateAdd("h", CDbl(Mid(CStr(UtcDateValues(1)), 1, 2)), UtcDate)
+                    UtcDate = DateAdd("n", CDbl(Mid(CStr(UtcDateValues(1)), 4, 2)), UtcDate)
+                    UtcDate = DateAdd("s", CDbl(Mid(CStr(UtcDateValues(1)), 7, 2)), UtcDate)
+                End If
+            End If
+            ReadIndex = SymbolIndex + 1
     End Select
+    
+    Parse_Core = SkipSpace(Text, ReadIndex)
 End Function
 
-'/--‹L†‚ÌI’[‚ÌŸ‚Ì•¶šIndex‚ğ•Ô‹p‚·‚éB
+'/--è¨˜å·ã®çµ‚ç«¯ã®æ¬¡ã®æ–‡å­—Indexã‚’è¿”å´ã™ã‚‹ã€‚
 Private Function GetEndSymbolIndex(ByRef Text As String, ByVal Index As Long, ByVal Target As String) As Long
-    If Index = 0 Then Err.Raise 1000, "Index‚Í0ˆÈã‚ğw’è‚µ‚Ä‚­‚¾‚³‚¢B"
+    If Index = 0 Then Err.Raise 1000, "Indexã¯0ä»¥ä¸Šã‚’æŒ‡å®šã—ã¦ãã ã•ã„ã€‚"
     
     Dim EndTarget As String
     If Target = "{" Then
@@ -179,7 +324,7 @@ Private Function GetEndSymbolIndex(ByRef Text As String, ByVal Index As Long, By
     ElseIf Target = "[" Then
         EndTarget = "]"
     Else
-        Err.Raise 1000, "‹L†‚ª³‚µ‚­‚ ‚è‚Ü‚¹‚ñB"
+        Err.Raise 1000, "è¨˜å·ãŒæ­£ã—ãã‚ã‚Šã¾ã›ã‚“ã€‚"
     End If
     
     Dim T1 As Long, T2 As Long
@@ -190,23 +335,44 @@ Private Function GetEndSymbolIndex(ByRef Text As String, ByVal Index As Long, By
         T2 = InStr(T2 + 1, Text, EndTarget)
     Loop While T1 <> 0 And T2 <> 0 And T1 < T2
     
-    If T2 = 0 Then Err.Raise 1000, "I’[‹L†‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñB"
+    If T2 = 0 Then Err.Raise 1000, "çµ‚ç«¯è¨˜å·ãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ã€‚"
     
     GetEndSymbolIndex = T2
 End Function
 
-'/--‹ó”’‚ğƒXƒLƒbƒv‚µ‚ÄŸ‚Ì’l‚ğ•Ô‹p‚·‚éB
+'/--çµ‚ç«¯è¨˜å·(,}])ã®å†…æœ€å°ã®Indexã‚’è¿”å´ã™ã‚‹ã€‚
+Private Function GetMinEndSymbolIndex(ByRef Text As String, ByVal Index As Long) As Long
+    Dim S1 As Long, S2 As Long, S3 As Long
+        S1 = InStr(Index, Text, ",", vbTextCompare)
+        S2 = InStr(Index, Text, "}", vbTextCompare)
+        S3 = InStr(Index, Text, "]", vbTextCompare)
+    
+    Dim MinIndex As Long
+        MinIndex = WorksheetFunction.Min(S1, S2, S3)
+    
+    If MinIndex <> 0 Then
+        GetMinEndSymbolIndex = MinIndex
+    Else
+        If S1 = 0 Then S1 = MaxValue
+        If S2 = 0 Then S2 = MaxValue
+        If S3 = 0 Then S3 = MaxValue
+        
+        GetMinEndSymbolIndex = WorksheetFunction.Min(S1, S2, S3)
+    End If
+    
+    If GetMinEndSymbolIndex = MaxValue Then Err.Raise 1000, "åŒºåˆ‡ã‚ŠãŒæ­£ã—ãçµ‚äº†ã—ã¦ã„ã¾ã›ã‚“ã€‚"
+End Function
+
+'/--ç©ºç™½ã‚’ã‚¹ã‚­ãƒƒãƒ—ã—ã¦æ¬¡ã®å€¤ã‚’è¿”å´ã™ã‚‹ã€‚
 Private Function SkipSpace(ByRef Text As String, ByVal Index As Long) As Long
     Dim Target As String
     Target = Mid(Text, Index, 1)
 
-    Do While JsonEndIndex < Index And (Target = vbCrLf Or Target = vbCr Or Target = vbLf Or Target = vbTab Or Target = vbBack Or Target = vbNewLine Or Target = " " Or Target = "@")
+    Do While JsonEndIndex > Index And (Target = vbCrLf Or Target = vbCr Or Target = vbLf Or Target = vbTab Or Target = vbBack Or Target = vbNewLine Or Target = " " Or Target = "ã€€")
         Index = Index + 1
+        Target = Mid(Text, Index, 1)
     Loop
     
     SkipSpace = Index
 End Function
 
-Private Sub Class_Initialize()
-    Set JsonDic = CreateObject("Scripting.Dictionary")
-End Sub
