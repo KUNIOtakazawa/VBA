@@ -8,8 +8,14 @@
     Private TemplateProp As String
     Private JsonEndIndex As Long
     Private IsLowCaseKey As Boolean
+    
     Private ReadIndex As Long
     Private ReadKeyInfo As String
+    
+    Private ReadIndexs As String
+    Private ReadKeysInfo As String
+    
+    Private Const Temp As String = "$/-/$"
     Private Const MaxValue As Long = 2147483647
 
 '/--Keyが存在しているか確認する。
@@ -32,7 +38,11 @@ Public Function ExistsArrayCount(ByVal Key As String) As Long
         ExistsArrayCount = False
     Else
         Key = RewriteKey(Key)
-
+        
+        If IsLowCaseKey Then
+            Key = LCase(Key)
+        End If
+        
         If ArrayCountDic.Exists(Key) Then
             ExistsArrayCount = ArrayCountDic.Item(Key)
         Else
@@ -71,36 +81,99 @@ Public Sub ReleaseTemplateProperty()
     TemplateProp = ""
 End Sub
 
-Public Function Loop_AppendTemplate(ParamArray Keys() As Variant) As Boolean
+'/--Keyが配列の場合にTrueを返す、または次Falseを返されるまで、現在のKeyをテンプレートとして保存する。
+'/--2重ループ以上でFalseが返された場合は、テンプレート情報を一つ上の階層情報に書き換えを行う。
+Public Function Read_LoopTemplate(ParamArray Keys() As Variant) As Boolean
     Dim Key As String
         Key = BuildKey(Keys)
     
-    If ReadIndex = -1 Or ReadKeyInfo <> Key Then
-        SetTemplateProperty = Key & "#Index"
-        ReadKeyInfo = Key
+    
+    If ReadIndexs = "" Then
+        If ExistsArrayCount(Key) = -1 Then GoTo NotFound
+                
         ReadIndex = 0
-    Else
+        ReadIndexs = "0"
+        ReadKeysInfo = Key
+        
+    ElseIf Split(ReadKeysInfo, Temp)(UBound(Split(ReadKeysInfo, Temp))) = Key Then
         ReadIndex = ReadIndex + 1
+        
+        SetTemplateProperty = BuildLoopTemplate(True)
+        
+        If ExistsArrayCount("") <= ReadIndex Then GoTo MoveUp
+                
+        If UBound(Split(ReadIndexs, Temp)) = 0 Then
+            ReadIndexs = CStr(ReadIndex)
+        
+        Else
+            ReadIndexs = Left(ReadIndexs, InStrRev(ReadIndexs, Temp) - 1) & Temp & ReadIndex
+            
+        End If
+        
+    Else
+        If ExistsArrayCount(Key) < 1 Then GoTo NotFound
+        
+        ReadIndex = 0
+        
+        ReadIndexs = ReadIndexs & Temp & ReadIndex
+        ReadKeysInfo = ReadKeysInfo & Temp & Key
+ 
     End If
     
-    If ArrayCountDic.Exists(ReadKeyInfo) = False Then GoTo DisableKey
-    If ReadIndex > ArrayCountDic.Item(ReadKeyInfo) Then GoTo DisableKey
+    SetTemplateProperty = BuildLoopTemplate()
+    Read_LoopTemplate = True
     
-    Loop_AppendTemplate = True
     Exit Function
+       
+MoveUp:
+    If InStr(1, ReadIndexs, Temp, vbTextCompare) = 0 Then GoTo ReadEmpty
     
-DisableKey:
+    ReadIndexs = Left(ReadIndexs, InStrRev(ReadIndexs, Temp) - 1)
+    ReadKeysInfo = Left(ReadKeysInfo, InStrRev(ReadKeysInfo, Temp) - 1)
+    
+    SetTemplateProperty = BuildLoopTemplate()
+    
+    If InStr(1, ReadIndexs, Temp, vbTextCompare) = 0 Then
+        ReadIndex = CLng(ReadIndexs)
+    Else
+        ReadIndex = CLng(Split(ReadIndexs, Temp)(UBound(Split(ReadIndexs, Temp)) - 1))
+    End If
+    
+    GoTo NotFound
 
-    ReadIndex = -1
-    ReadKeyInfo = ""
+ReadEmpty:
+    ReadIndexs = ""
+    ReadKeysInfo = ""
     Call ReleaseTemplateProperty
-    Loop_AppendTemplate = False
+    ReadIndex = -1
     
-End Function
-'/--#Indexを[0]に変換したKey情報が見つかった場合はTrueを返す。
-'/--更に単発系Readメソッドで#Indexの値を[数値]に変換して取得を行う。
-'/--同じKeyを2回以上呼び出している場合、Keyが存在した場合はIndexを加算して変換を行う。
+    GoTo NotFound
+    
+NotFound:
+    Read_LoopTemplate = False
 
+End Function
+
+'/--現在の累積テンプレート情報から連結プロパティKeyを返却する。
+Private Function BuildLoopTemplate(Optional ByVal IsArrayCount As Boolean = False) As String
+    If ReadIndexs = "" Then
+        BuildLoopTemplate = ""
+        Exit Function
+    End If
+    
+    Dim Result As String, i As Long
+    Dim Keys As Variant, Indexs As Variant
+        Keys = Split(ReadKeysInfo, Temp)
+        Indexs = Split(ReadIndexs, Temp)
+        
+    For i = 0 To UBound(Keys)
+        Result = Result & Keys(i)
+        
+        If IsArrayCount = False Or i <> UBound(Keys) Then Result = Result & "[" & Indexs(i) & "]->"
+    Next
+    
+    BuildLoopTemplate = Result
+End Function
  
 '/--値を取得する。
 Public Function Read(ByVal Key As String) As Variant
@@ -361,9 +434,10 @@ End Function
 
 '/--Keyの情報をクラス内の指定条件に従い書き換えて返却する。
 Private Function RewriteKey(ByVal Key As String) As String
-    If IsLowCaseKey Then Key = LCase(Key)
     If TemplateProp <> "" Then Key = TemplateProp & Key
-    If ReadIndex >= 0 Then Key = Replace(Key, "#Index", "[" & ReadIndex & "]", Compare:=vbTextCompare)
+    If ReadIndex >= 0 Then Key = Replace(Key, "#Index", "[" & ReadIndex & "]", compare:=vbTextCompare)
+    If IsLowCaseKey Then Key = LCase(Key)
+    If Right$(Key, 2) = "->" Then Key = Left$(Key, Len(Key) - 2)
     
     RewriteKey = Key
 End Function
@@ -419,12 +493,15 @@ Public Sub Parse(ByRef ParseJsonText As String, Optional ByVal LowCaseKey As Boo
     Dim CheckTarget As String
         CheckTarget = Mid$(ParseJsonText, 1, 1)
     Dim StartIndex As Long
+        StartIndex = SkipSpace(ParseJsonText, 2)
+    
+    JsonEndIndex = JsonEndIndex - StartIndex '/--初期空欄対策
     
     If CheckTarget = "{" Then
-        StartIndex = Parse_Object(Mid$(ParseJsonText, SkipSpace(ParseJsonText, 2)), "")
+        StartIndex = Parse_Object(Mid$(ParseJsonText, StartIndex), "")
     
     ElseIf CheckTarget = "[" Then
-        StartIndex = Parse_Array(Mid$(ParseJsonText, SkipSpace(ParseJsonText, 2)), "")
+        StartIndex = Parse_Array(Mid$(ParseJsonText, StartIndex), "")
     
     Else: Err.Raise 1000, "先端記号が正しくありません。"
     
@@ -480,14 +557,13 @@ Private Function Parse_Object(ByRef Text As String, ByVal DicText As String) As 
             If SymbolIndex = 1 Then Err.Raise 1000, "プロパティ終端の記号が正しくありません。"
             
             Dim PropScope As String
-                PropScope = Mid$(Text, SymbolIndex)
+                PropScope = Mid$(Text, SymbolIndex, GetEndSymbolIndex(Text, SymbolIndex, "{") - SymbolIndex + 1)
                 
             If DicText = "" Then
                 ReadIndex = SymbolIndex + Parse_Core(PropScope, AppendDicText)
             Else
                 ReadIndex = SymbolIndex + Parse_Core(PropScope, DicText & "->" & AppendDicText)
             End If
-            
         End If
     Loop
     
@@ -578,12 +654,10 @@ Private Function Parse_Core(ByRef Text As String, ByVal DicText As String) As Lo
             If IsNumeric(Value) = False Then GoTo NotNumber
             If Len(Value) < 10 Then
                 Call AddDic(DicText, CLng(Value))
-                'JsonDic.Add DicText, CLng(Value)
             
             ElseIf Len(Value) = 10 Then
                 If CLng(Mid$(Value, 1, 9)) > 214748364 Then GoTo NotNumber
                  Call AddDic(DicText, CLng(Value))
-                 'JsonDic.Add DicText, CLng(Value)
                  
             End If
             
@@ -607,15 +681,13 @@ NotNumber:
                 UtcDate = DateAdd("s", CDbl(Mid$(CStr(CheckUtcValues(1)), 7, 2)), UtcDate)
                 
                 Call AddDic(DicText, UtcDate)
-                'JsonDic.Add DicText, UtcDate
                 GoTo ContinueCore
             End If
 
 NotDate:
             Call AddDic(DicText, Value)
-            'JsonDic.Add DicText, Value
 ContinueCore:
-            ReadIndex = SymbolIndex - ReadIndex
+            ReadIndex = SymbolIndex - ReadIndex + 1
     End Select
 
     Parse_Core = ReadIndex + AppendIndex
@@ -653,7 +725,6 @@ End Function
 
 '/--終端記号(,}])の内最小のIndexを返却する。
 Private Function GetMinEndSymbolIndex(ByRef Text As String, ByVal Index As Long) As Long
-
     Dim S1 As Long, S2 As Long, S3 As Long
         S1 = InStr(Index, Text, ",", vbTextCompare)
         S2 = InStr(Index, Text, "}", vbTextCompare)
